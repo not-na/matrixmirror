@@ -80,20 +80,13 @@ uint32_t display_buffers[2][DISPLAY_FRAMEBUFFER_SIZE];
 uint32_t* display_front_buf = &display_buffers[0][0];
 uint32_t* display_back_buf = &display_buffers[1][0];
 
-const uint32_t* display_background = nullptr;
-
-uint16_t display_brightness = 0xFFFF;
-
 PIO display_pio = pio0;
 uint display_sm_data, display_sm_row;
 uint display_offset_data, display_offset_row;
 
 int display_dma_chan;
 
-bool display_redraw = false;
 bool display_flip = false;
-
-int display_redraw_curidx = 0;
 
 uint8_t display_framenum = 0;
 
@@ -200,13 +193,12 @@ void hub75_init() {
                                           &display_front_buf[row*DISPLAY_SIZE*2],
                                           true);
 
-                // Check SIO FIFO if new simulation data is available
-                if (   !display_redraw
-                    && !display_flip
+                // Check SIO FIFO if new buffer is available
+                if (   !display_flip
                     && multicore_fifo_rvalid()
                     && multicore_fifo_pop_blocking() == DISPLAY_TRIGGER_REDRAW_MAGIC_NUMBER) {
                     // New data available, set flag
-                    display_redraw = true;
+                    display_flip = true;
                 }
 
                 // Wait for DMA completion to prevent dummy pixels being inserted at the wrong position
@@ -221,35 +213,18 @@ void hub75_init() {
                 // Just in case the flags were still set
                 hub75_pio_sm_clearstall();
 
-                // Continue redrawing if necessary
-                // Only try to redraw if the bit level is high enough, not worth it otherwise
-                // if (bit > 4 && display_redraw) {
-                //     redrawstate = hub75_update(redrawstate);
-                //
-                //     if (redrawstate == DISPLAY_REDRAWSTATE_IDLE) {
-                //         // Done redrawing, mark readiness for flipping at the end of the frame
-                //         display_redraw = false;
-                //         display_flip = true;
-                //     }
-                // }
-
                 // Finish waiting if redraw was quick or not necessary
                 // Also clears FIFO stall flags
                 hub75_wait_tx_stall(display_pio, display_sm_data);
                 hub75_wait_tx_stall(display_pio, display_sm_row);
 
                 // Pulse LAT and OE using PIO
-                // TODO: check scaling of delay
                 pio_sm_put_blocking(display_pio,
                                     display_sm_row,
                                     row | ((16u * (1u << bit)) << DISPLAY_ROWSEL_COUNT)
                 );
             }
         }
-
-        //if (display_redraw) {
-        //    printf("REDRAW Carry\n");
-        //}
 
         // Ready to flip
         if (display_flip) {
@@ -285,50 +260,21 @@ void hub75_init() {
     }
 }
 
-DISPLAY_REDRAWSTATE __not_in_flash_func(hub75_update)(DISPLAY_REDRAWSTATE state) {
-    if (state == DISPLAY_REDRAWSTATE_IDLE) {
-        // Fresh start, start by clearing
-        state = DISPLAY_REDRAWSTATE_CLEAR;
-        display_redraw_curidx = 0;
-    }
+void __not_in_flash_func(hub75_blit_from_buffer)(const uint32_t* buf, uint32_t w, uint32_t h) {
+    assert(w == DISPLAY_SIZE);
+    assert(h == DISPLAY_SIZE);
 
-    while (hub75_pio_sm_stalled() && state != DISPLAY_REDRAWSTATE_IDLE) {
-        // Redraw something as long as we would have to wait anyway
-        // Requires that the loop contents be somewhat fast to minimize overshoot
+    for (int y = 0; y < DISPLAY_SIZE; ++y) {
+        // Precalculate row address start
+        int startaddr = y*DISPLAY_SIZE*2;
+        if (y >= DISPLAY_SCAN) {
+            startaddr = (y-DISPLAY_SCAN) * DISPLAY_SIZE*2 + 1;
+        }
 
-        if (state == DISPLAY_REDRAWSTATE_CLEAR) {
-            // Copy one row per iteration
-            if (display_background == nullptr) {
-                state = DISPLAY_REDRAWSTATE_IDLE;
-                display_redraw_curidx = 0;
-                continue;
-            }
-
-            // Note that while we could use hub75_draw_pixel() here, it would be
-            // far less efficient. Since we always copy a row at a time, we can
-            // pre-calculate the starting address and thus save us a branch on every pixel
-            int startaddr = display_redraw_curidx*DISPLAY_SIZE*2;
-            if (display_redraw_curidx >= DISPLAY_SCAN) {
-                // Interleave-shifted row
-                startaddr = (display_redraw_curidx-DISPLAY_SCAN)*DISPLAY_SIZE*2+1;
-            }
-
-            for (int x = 0; x < DISPLAY_SIZE; x++) {
-                display_back_buf[startaddr+2*x] = display_background[display_redraw_curidx*DISPLAY_SIZE+x];
-            }
-
-            display_redraw_curidx++;
-            if (display_redraw_curidx >= DISPLAY_SIZE) {
-                state = DISPLAY_REDRAWSTATE_IDLE;
-                display_redraw_curidx = 0;
-            }
-        } else {
-            // Fallback, should not normally happen
-            state = DISPLAY_REDRAWSTATE_IDLE;
+        for (int x = 0; x < DISPLAY_SIZE; ++x) {
+            display_back_buf[startaddr+2*x] = buf[y*DISPLAY_SIZE+x];
         }
     }
-
-    return state;
 }
 
 bool hub75_pio_sm_stalled() {

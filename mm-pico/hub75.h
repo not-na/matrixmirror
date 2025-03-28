@@ -56,9 +56,6 @@ enum DISPLAY_REDRAWSTATE {
     DISPLAY_REDRAWSTATE_CLEAR,
 };
 
-extern const uint32_t* display_background;
-extern uint16_t display_brightness;
-
 // TODO: write docs for hub75_* functions
 void hub75_init();
 
@@ -68,5 +65,7 @@ bool hub75_pio_sm_stalled();
 void hub75_pio_sm_clearstall();
 
 DISPLAY_REDRAWSTATE hub75_update(DISPLAY_REDRAWSTATE state);
+
+void hub75_blit_from_buffer(const uint32_t* buf, uint32_t w, uint32_t h);
 
 static inline void hub75_draw_pixel(uint32_t* buf, uint32_t x, uint32_t y, uint32_t color);
