@@ -20,4 +20,31 @@
 #  You should have received a copy of the GNU General Public License
 #  along with mm-host.  If not, see <http://www.gnu.org/licenses/>.
 #
+import pprint
 
+from util import *
+from camera import CameraSource
+from display import *
+from components import *
+
+def main():
+    PIPELINE = [
+        CameraSource(),
+        SquareCrop(),
+        ScaleDown(),
+
+        AsyncDisplay(SPIDisplay()),
+    ]
+
+    pipeline = Pipeline(PIPELINE, enable_perfmonitor=True)
+    print(f"Parameters:")
+    pprint.pprint(pipeline.params)
+
+    try:
+        while True:
+            pipeline.do_single_frame()
+    finally:
+        pipeline.close()
+
+if __name__ == "__main__":
+    main()

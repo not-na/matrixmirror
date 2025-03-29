@@ -28,14 +28,18 @@ import socket
 import struct
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 import traceback
 import threading
+
+import numpy as np
 
 import serial
 import serial.tools.list_ports
 
 import spidev
+
+import util
 
 DISPLAY_SIZE = 64
 
@@ -47,10 +51,26 @@ SERIAL_INTERFACE = "Board CDC"
 
 SPI_SPEED_KHZ = 16000
 
-class AbstractDisplay(abc.ABC):
+class AbstractDisplay(util.FrameSink):
     def __init__(self, fps_limit: float = 60):
         self.last_frame = time.perf_counter()
         self.fps_limit = fps_limit
+
+    def push_frame(self, frame):
+        assert frame.shape == (DISPLAY_SIZE, DISPLAY_SIZE, 3), f"Frame shape is {frame.shape}"
+        assert frame.dtype == np.uint8
+
+        frame = frame.transpose((1, 0, 2))
+
+        buf = frame.tobytes("C")
+        assert len(buf) == DISPLAY_SIZE*DISPLAY_SIZE*3
+        self.draw_frame(buf)
+
+    def get_config_params(self) -> Dict[str, Dict]:
+        return {}
+
+    def on_param_changed(self, param_name: str, new_value) -> None:
+        pass
 
     @abc.abstractmethod
     def send_buffer(self, buf: bytes):

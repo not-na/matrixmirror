@@ -1,2 +1,4 @@
 pyserial==3.5
 spidev==3.6
+opencv-python==4.11.0.86
+picamera2==0.3.25
