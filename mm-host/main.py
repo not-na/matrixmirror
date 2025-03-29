@@ -36,7 +36,7 @@ def main():
         AsyncDisplay(SPIDisplay()),
     ]
 
-    pipeline = Pipeline(PIPELINE, enable_perfmonitor=True)
+    pipeline = Pipeline(PIPELINE, enable_perfmonitor=False)
     print(f"Parameters:")
     pprint.pprint(pipeline.params)
 

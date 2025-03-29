@@ -33,6 +33,9 @@ class SquareCrop(FrameProcessor):
         if h == w:
             return frame  # Already square
 
+        # Hack to get the later scale to an integer, halves processing time
+        h = 448
+
         # Crop to center
         return frame[0:h, (w-h)//2:(w-h)//2+h]
 
