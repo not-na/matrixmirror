@@ -21,6 +21,8 @@
 #  along with mm-host.  If not, see <http://www.gnu.org/licenses/>.
 #
 import abc
+import collections
+import queue
 
 import socket
 import struct
@@ -28,9 +30,12 @@ import time
 from pathlib import Path
 from typing import Optional
 import traceback
+import threading
 
 import serial
 import serial.tools.list_ports
+
+import spidev
 
 DISPLAY_SIZE = 64
 
@@ -40,8 +45,10 @@ SERIAL_VID = 0x2e8a
 SERIAL_PID = 0x000a
 SERIAL_INTERFACE = "Board CDC"
 
+SPI_SPEED_KHZ = 16000
+
 class AbstractDisplay(abc.ABC):
-    def __init__(self, fps_limit: float = 30):
+    def __init__(self, fps_limit: float = 60):
         self.last_frame = time.perf_counter()
         self.fps_limit = fps_limit
 
@@ -54,17 +61,23 @@ class AbstractDisplay(abc.ABC):
         pass
 
     def draw_frame(self, framebuf: bytes):
-        wait_time = 1/self.fps_limit - (time.perf_counter() - self.last_frame)
-        if wait_time > 0:
-            time.sleep(wait_time)
-        self.send_buffer(MAGIC_PREAMBLE+framebuf)
-
         t = time.perf_counter()
-        print(f"Running at {1/(t-self.last_frame):.2f} FPS")
-        self.last_frame = t
+        wait_time = 1/self.fps_limit - (t - self.last_frame)
+        if wait_time > 0:
+            #print(f"Running too fast, sleeping for {wait_time} seconds")
+            time.sleep(wait_time)
+
+        st = time.perf_counter()
+        buf = MAGIC_PREAMBLE+framebuf
+        self.send_buffer(buf)
+        et = time.perf_counter()
+        #print(f"Frame update took {et - st:.4f} seconds ({len(buf) * 8 / (et - st) / 1024:.2f}kiBits/s) => {1 / (et - st):.4f} FPS max")
+
+        print(f"Running at {1/(st-self.last_frame):.2f} FPS")
+        self.last_frame = st
 
     def set_solid_color(self, color):
-        print(f'Setting solid color to {color}')
+        #print(f'Setting solid color to {color}')
         out_color = struct.pack("BBB", *color)
 
         out = bytearray(DISPLAY_SIZE*DISPLAY_SIZE*3)
@@ -150,21 +163,67 @@ class SerialDisplay(AbstractDisplay):
 
     def send_buffer(self, buf: bytes):
         #print(f"Sending {len(buf)} bytes")
-        st = time.perf_counter()
         self.serial.write(buf)
         self.serial.flush()
-        et = time.perf_counter()
-        print(f"Frame update took {et-st:.4f} seconds ({len(buf)*8/(et-st)/1024:.2f}kiBits/s) => {1/(et-st):.4f} FPS")
         #print(f"Output: {self.serial.readlines()}")
 
     def close(self):
         self.serial.close()
 
 
+class SPIDisplay(AbstractDisplay):
+    def __init__(self):
+        super().__init__()
+
+        self.spi = spidev.SpiDev()
+        self.spi.open(0,0)
+
+        self.spi.max_speed_hz = SPI_SPEED_KHZ*1000
+        self.spi.mode = 0b11
+
+    def send_buffer(self, buf: bytes):
+        self.spi.writebytes2(bytearray(buf))
+
+    def close(self):
+        self.spi.close()
+
+
+class AsyncDisplay(AbstractDisplay):
+    def __init__(self, display: AbstractDisplay):
+        super().__init__()
+
+        self.display = display
+
+        self.queue = queue.Queue(maxsize=1)
+
+        self.thread = threading.Thread(target=self._run)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def _run(self):
+        while True:
+            buf = self.queue.get()
+            if buf is None:
+                break
+            self.display.draw_frame(buf)
+
+    def draw_frame(self, buf: bytes):
+        self.queue.put(buf)
+
+    def send_buffer(self, buf: bytes):
+        raise NotImplementedError("AsyncDisplay.send_buffer should not be called directly")
+
+    def close(self):
+        self.queue.put(None)
+        self.thread.join()
+        self.display.close()
+
+
 if __name__ == "__main__":
     #display = SerialUnixSocketDisplay(Path("~/.tio-sock"))
     #display = SerialDisplay()
-    display = TCPDisplay("192.168.178.176")
+    #display = TCPDisplay("192.168.178.176")
+    display = AsyncDisplay(SPIDisplay())
 
     colors = [
         (0, 0, 0),
@@ -178,14 +237,12 @@ if __name__ == "__main__":
     ]
 
     try:
-        display.set_solid_color((255,255,255))
-
         while True:
             #for c in colors:
             #    display.set_solid_color(c)
-            for i in range(0, 512, 4):
+            for i in range(0, 512, 1):
                 #time.sleep(1.0)
-                #time.sleep(0.1)
+                #time.sleep(0.5)
                 n = i
                 if i >= 256:
                     n = 511 - i

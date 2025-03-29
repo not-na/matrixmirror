@@ -56,6 +56,8 @@ enum DISPLAY_REDRAWSTATE {
     DISPLAY_REDRAWSTATE_CLEAR,
 };
 
+extern float hub75_hz;
+
 // TODO: write docs for hub75_* functions
 void hub75_init();
 

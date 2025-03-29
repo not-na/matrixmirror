@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.25)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
@@ -38,6 +38,7 @@ target_link_libraries(mm_pico
         pico_cyw43_arch_lwip_threadsafe_background
         pico_multicore
         hardware_i2c
+        hardware_spi
         hardware_dma
         hardware_pio
         hardware_interp

@@ -6,11 +6,9 @@
 #include <lwip/tcp.h>
 #include <main.h>
 
-// Buffers are stored without preamble
-constexpr int bufsize = DISPLAY_SIZE*DISPLAY_SIZE*3;
-
-uint8_t buf_a[bufsize];
-uint8_t buf_b[bufsize];
+// Buffers are stored without preamble, the extra bytes are for the SPI mode
+extern uint8_t buf_a[bufsize+sizeof(magic_preamble)];
+extern uint8_t buf_b[bufsize+sizeof(magic_preamble)];
 
 uint8_t* buf_recv = buf_a;
 uint8_t* buf_present = buf_b;

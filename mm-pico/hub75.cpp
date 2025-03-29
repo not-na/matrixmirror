@@ -90,6 +90,8 @@ bool display_flip = false;
 
 uint8_t display_framenum = 0;
 
+float hub75_hz = NAN;
+
 void hub75_init() {
     // Information for picotool
     bi_decl(bi_3pins_with_names(
@@ -251,12 +253,13 @@ void hub75_init() {
             multicore_fifo_push_blocking(DISPLAY_REDRAW_DONE_MAGIC_NUMBER);
         }
 
-        // if (frame % 1000 == 0) {
-        //     absolute_time_t ct = get_absolute_time();
-        //     int64_t td = absolute_time_diff_us(last_refresh, ct);
-        //     float hz = 1/((float)td/1000/1000);
-        //     printf("Refresh: took %lldus -> %.3fHz\n", td, hz);
-        // }
+        if (frame % 1000 == 0) {
+            absolute_time_t ct = get_absolute_time();
+            int64_t td = absolute_time_diff_us(last_refresh, ct);
+            float hz = 1/((float)td/1000/1000);
+            hub75_hz = hz;
+            // printf("Refresh: took %lldus -> %.3fHz\n", td, hz);
+        }
     }
 }
 

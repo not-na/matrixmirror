@@ -3,6 +3,7 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12 (mm-host)" />
   </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="Remote Python 3.11.2 (sftp://notna@hermippe:22/home/notna/.virtualenvs/mm-host/bin/python)" project-jdk-type="Python SDK" />
   <component name="PythonCompatibilityInspectionAdvertiser">
     <option name="version" value="3" />
   </component>

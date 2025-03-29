@@ -1,15 +1,30 @@
 #include "main.h"
 
+#include <hardware/spi.h>
 #include <hardware/watchdog.h>
 #include <pico/cyw43_arch.h>
 #include <server.h>
 
-constexpr framebuf_src use_framebuf_src = FRAMEBUF_SRC_TCP;
+constexpr framebuf_src use_framebuf_src = FRAMEBUF_SRC_SPI;
 
 uint32_t framebuf[DISPLAY_SIZE*DISPLAY_SIZE];
 
+constexpr int pin_spi_clk = 2;
+constexpr int pin_spi_miso = 3;
+constexpr int pin_spi_mosi = 4;
+constexpr int pin_spi_cs = 5;
+
+auto host_spi = spi0;
+
+uint8_t buf_a[bufsize+sizeof(magic_preamble)];
+uint8_t buf_b[bufsize+sizeof(magic_preamble)];
+
+uint8_t* buf_dma = buf_a;
+uint8_t* buf_proc = buf_b;
 
 int main() {
+    uint dma_rx;
+
     stdio_init_all();
 
     puts("mm-pico booting up...\n");
@@ -18,7 +33,6 @@ int main() {
     hub75_init();
 
     multicore_launch_core1(hub75_main);
-    sleep_ms(100);
 
     if (watchdog_caused_reboot()) {
         puts("Reboot caused by watchdog!");
@@ -42,14 +56,43 @@ int main() {
         puts("WiFi connected");
 
         server_init();
+    } else if (use_framebuf_src == FRAMEBUF_SRC_SPI) {
+        // Setup GPIO and SPI
+        spi_init(host_spi, 1*1000*1000);
+        gpio_set_function(pin_spi_clk, GPIO_FUNC_SPI);
+        gpio_set_function(pin_spi_mosi, GPIO_FUNC_SPI);
+        gpio_set_function(pin_spi_miso, GPIO_FUNC_SPI);
+        gpio_set_function(pin_spi_cs, GPIO_FUNC_SPI);
+
+        spi_set_format(host_spi, 8, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
+        spi_set_slave(host_spi, true);
+
+        // Init RX DMA
+        dma_rx = dma_claim_unused_channel(true);
+
+        dma_channel_config c = dma_channel_get_default_config(dma_rx);
+        channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
+        channel_config_set_dreq(&c, spi_get_dreq(host_spi, false));
+        channel_config_set_read_increment(&c, false);
+        channel_config_set_write_increment(&c, true);
+        dma_channel_configure(dma_rx, &c,
+            buf_dma,
+            &spi_get_hw(host_spi)->dr,
+            bufsize+sizeof(magic_preamble),
+            true
+        );
     }
 
     uint32_t frame = 0;
     absolute_time_t frame_time = get_absolute_time();
+    absolute_time_t stat_time = get_absolute_time();
 
     bool last_loop_rendered = false;
     absolute_time_t last_warn = get_absolute_time();
     uint32_t warn_count = 0;
+
+    uint desync_count = 0;
+    uint sync_count = 0;
 
     watchdog_enable(1000, true);
 
@@ -98,7 +141,64 @@ int main() {
             }
 
         } else if (use_framebuf_src == FRAMEBUF_SRC_SPI) {
-            panic("SPI not yet implemented");
+            // Wait for DMA to be ready
+            //puts("Waiting for frame...");
+            dma_channel_wait_for_finish_blocking(dma_rx);
+
+            // Check if preamble is correct
+            if (memcmp(buf_dma, magic_preamble, sizeof(magic_preamble)) != 0) {
+                // Preamble does not match!
+                // We have likely been desynced (or booted in the middle of a frame)
+                puts("Desynced, resyncing");
+                desync_count++;
+                if (desync_count == 5) {
+                    // Something is wrong, we have too many desyncs recently
+                    // Reboot to try and fix the issue
+                    printf("Too many desyncs, rebooting\n");
+                    watchdog_reboot(0, 0, 0);
+                }
+
+                // Poll SPI data until we get a preamble
+                int s = 0;
+                while (true) {
+                    uint8_t c;
+                    spi_read_blocking(host_spi, 0, &c, 1);
+                    //printf("c=%d\n", c);
+
+                    if (c == magic_preamble[s]) {
+                        s++;
+                        if (s >= sizeof(magic_preamble)) {
+                            break;  // Synchronized again
+                        }
+                    } else {
+                        s = 0;
+                    }
+                }
+
+                dma_channel_set_write_addr(dma_rx, &buf_dma[sizeof(magic_preamble)], true);
+                memcpy(buf_dma, magic_preamble, sizeof(magic_preamble));  // Manually copy preamble since we already consumed it
+                puts("Synced again");
+                continue;
+            }
+
+            sync_count++;
+            if (sync_count > 10) {
+                desync_count = 0;
+            }
+
+            // Swap buffers and restart DMA immediately
+            uint8_t* tmp = buf_dma;
+            buf_dma = buf_proc;
+            buf_proc = tmp;
+
+            dma_channel_set_write_addr(dma_rx, buf_dma, true);
+            //puts("Buffers swapped");
+
+            // Unpack RGB into framebuf
+            for (int i = 0; i < sizeof(framebuf)/sizeof(framebuf[0]); ++i) {
+                framebuf[i] = buf_proc[i*3+sizeof(magic_preamble)] | buf_proc[i*3+sizeof(magic_preamble)+1] << 8 | buf_proc[i*3+sizeof(magic_preamble)+2] << 16;
+            }
+
         } else if (use_framebuf_src == FRAMEBUF_SRC_TCP) {
             uint8_t* buf = server_get_cur_buf();
             if (buf == nullptr) {
@@ -133,7 +233,9 @@ int main() {
         absolute_time_t et = get_absolute_time();
         if (frame % (display_fps/1) == 0) {
             int64_t ft = absolute_time_diff_us(frame_time, et);
-            printf("Frametime=%lldus (max=%dus) cpu=%.3f%%\n", ft, 1000000/display_fps,  ((int32_t)ft)/(1000000.0/display_fps)*100);
+            float fps = 1000000.0f / absolute_time_diff_us(stat_time, et) * display_fps;
+            printf("Frametime=%lldus (max=%dus) cpu=%.3f%% FPS: %f (%fHz)\n", ft, 1000000/display_fps,  ((int32_t)ft)/(1000000.0/display_fps)*100, fps, hub75_hz);
+            stat_time = et;
         }
     }
 }
