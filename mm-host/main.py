@@ -22,22 +22,31 @@
 #
 import pprint
 
+import argparse
+
 from util import *
 from camera import CameraSource
 from display import *
 from components import *
 
 def main():
+    parser = argparse.ArgumentParser(description='MatrixMirror Host')
+
+    parser.add_argument("--service", action="store_true", help="Run as a service. Disables high-frequency logging")
+    parser.add_argument("--perfmon", action="store_true", help="Enable per-component performance logging")
+
+    args = parser.parse_args()
+
     PIPELINE = [
         CameraSource(),
         SquareCrop(),
         ScaleDown(),
 
-        AsyncDisplay(SPIDisplay()),
+        AsyncDisplay(SPIDisplay(show_fps=not args.service)),
     ]
 
-    pipeline = Pipeline(PIPELINE, enable_perfmonitor=False)
-    print(f"Parameters:")
+    pipeline = Pipeline(PIPELINE, enable_perfmonitor=args.perfmon)
+    print(f"mm-host parameters:")
     pprint.pprint(pipeline.params)
 
     try:

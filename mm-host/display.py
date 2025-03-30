@@ -52,9 +52,10 @@ SERIAL_INTERFACE = "Board CDC"
 SPI_SPEED_KHZ = 16000
 
 class AbstractDisplay(util.FrameSink):
-    def __init__(self, fps_limit: float = 60):
+    def __init__(self, fps_limit: float = 60, show_fps: bool = True):
         self.last_frame = time.perf_counter()
         self.fps_limit = fps_limit
+        self.show_fps = show_fps
 
     def push_frame(self, frame):
         assert frame.shape == (DISPLAY_SIZE, DISPLAY_SIZE, 3), f"Frame shape is {frame.shape}"
@@ -93,7 +94,8 @@ class AbstractDisplay(util.FrameSink):
         et = time.perf_counter()
         #print(f"Frame update took {et - st:.4f} seconds ({len(buf) * 8 / (et - st) / 1024:.2f}kiBits/s) => {1 / (et - st):.4f} FPS max")
 
-        print(f"Running at {1/(st-self.last_frame):.2f} FPS")
+        #if self.show_fps:
+        #    print(f"Running at {1/(st-self.last_frame):.2f} FPS")
         self.last_frame = st
 
     def set_solid_color(self, color):
@@ -192,8 +194,8 @@ class SerialDisplay(AbstractDisplay):
 
 
 class SPIDisplay(AbstractDisplay):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, show_fps: bool = True):
+        super().__init__(show_fps=show_fps)
 
         self.spi = spidev.SpiDev()
         self.spi.open(0,0)
