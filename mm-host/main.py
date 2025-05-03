@@ -25,7 +25,7 @@ import pprint
 import argparse
 
 from util import *
-from camera import CameraSource
+from camera import *
 from display import *
 from components import *
 
@@ -37,15 +37,18 @@ def main():
 
     args = parser.parse_args()
 
-    PIPELINE = [
-        CameraSource(),
+    components: List[PipelineComponent] = [
+        autocam(),
+        #CVCameraSource((1280, 720)),
         SquareCrop(),
         ScaleDown(),
+        #MotionExtract([0.5, 0.5]),
 
         AsyncDisplay(SPIDisplay(show_fps=not args.service)),
+        #CVDisplay(),
     ]
 
-    pipeline = Pipeline(PIPELINE, enable_perfmonitor=args.perfmon)
+    pipeline = Pipeline(components, enable_perfmonitor=args.perfmon)
     print(f"mm-host parameters:")
     pprint.pprint(pipeline.params)
 

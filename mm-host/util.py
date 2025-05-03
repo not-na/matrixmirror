@@ -49,12 +49,14 @@ class Pipeline:
             assert isinstance(c, FrameProcessor)
         assert isinstance(self.pipeline[-1], FrameSink)
 
-        self.params = {k: v for k, v in c.get_config_params().items() for c in self.pipeline}
+        self.params = {k: v for c in self.pipeline for k, v in c.get_config_params().items()}
 
         self.cfg = {k: v["default"] for k, v in self.params.items()}
 
         for c in self.pipeline:
             c.pipeline = self
+
+        self.n_frame = 0
 
     def get_cfg(self, key: str):
         return self.cfg[key]
@@ -69,25 +71,27 @@ class Pipeline:
         s1t = time.perf_counter()
         f = self.pipeline[0].get_frame()
         et = time.perf_counter()
-        if self.perfmonitor:
+        if self.perfmonitor and self.n_frame % 60 == 0:
             print("===========================")
-            print(f"Source took {et-s1t:.6f}s")
+            print(f"Source took {et-s1t:.6f}s => output shape {f.shape}")
 
         for c in self.pipeline[1:-1]:
             st = time.perf_counter()
             f = c.process(f)
             et = time.perf_counter()
 
-            if self.perfmonitor:
-                print(f"Component {c.__class__.__name__} took {et - st:.6f}s")
+            if self.perfmonitor and self.n_frame % 60 == 0:
+                print(f"Component {c.__class__.__name__} took {et - st:.6f}s => output shape {f.shape}")
 
         st = time.perf_counter()
         self.pipeline[-1].push_frame(f)
         et = time.perf_counter()
 
-        if self.perfmonitor:
-            print(f"Sink took {et - st:.6f}s")
+        if self.perfmonitor and self.n_frame % 60 == 0:
+            print(f"Sink took {et - st:.6f}s for shape {f.shape}")
             print(f" => Overall: {et-s1t:.6f}s ({1/(et-s1t):.3f}FPS)")
+
+        self.n_frame += 1
 
     def close(self):
         for c in self.pipeline:

@@ -32,6 +32,7 @@ from typing import Optional, Dict
 import traceback
 import threading
 
+import cv2
 import numpy as np
 
 import serial
@@ -56,6 +57,7 @@ class AbstractDisplay(util.FrameSink):
         self.last_frame = time.perf_counter()
         self.fps_limit = fps_limit
         self.show_fps = show_fps
+        self.n_frame = 0
 
     def push_frame(self, frame):
         assert frame.shape == (DISPLAY_SIZE, DISPLAY_SIZE, 3), f"Frame shape is {frame.shape}"
@@ -92,11 +94,13 @@ class AbstractDisplay(util.FrameSink):
         buf = MAGIC_PREAMBLE+framebuf
         self.send_buffer(buf)
         et = time.perf_counter()
-        #print(f"Frame update took {et - st:.4f} seconds ({len(buf) * 8 / (et - st) / 1024:.2f}kiBits/s) => {1 / (et - st):.4f} FPS max")
+        if self.n_frame % self.fps_limit == 0:
+            print(f"Frame update took {et - st:.4f} seconds ({len(buf) * 8 / (et - st) / 1024:.2f}kiBits/s) => {1 / (et - st):.4f} FPS max")
 
-        #if self.show_fps:
-        #    print(f"Running at {1/(st-self.last_frame):.2f} FPS")
+        if self.show_fps and self.n_frame % self.fps_limit == 0:
+            print(f"Running at {1/(st-self.last_frame):.2f} FPS")
         self.last_frame = st
+        self.n_frame += 1
 
     def set_solid_color(self, color):
         #print(f'Setting solid color to {color}')
@@ -208,6 +212,30 @@ class SPIDisplay(AbstractDisplay):
 
     def close(self):
         self.spi.close()
+
+
+class CVDisplay(util.FrameSink):
+    def push_frame(self, frame):
+        f = self.get_cfg("cv_display_upscale")
+        frame = cv2.resize(frame, None, fx=f, fy=f, interpolation=cv2.INTER_NEAREST)
+
+        cv2.imshow("MM Host preview", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            raise KeyboardInterrupt
+
+    def close(self):
+        pass
+
+    def get_config_params(self) -> Dict[str, Dict]:
+        return {
+            "cv_display_upscale": {
+                "default": 8,
+            }
+        }
+
+    def on_param_changed(self, param_name: str, new_value) -> None:
+        pass
 
 
 class AsyncDisplay(AbstractDisplay):
