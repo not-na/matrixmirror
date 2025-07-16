@@ -42,43 +42,29 @@ class SquareCrop(FrameProcessor):
         # Crop to center
         return frame[0:h, (w-h)//2:(w-h)//2+h]
 
-    def get_config_params(self) -> Dict[str, Dict]:
-        return {}
 
-    def on_param_changed(self, param_name: str, new_value) -> None:
-        pass
-
-
+@dataclass
 class ScaleDown(FrameProcessor):
-    MODE = "hybrid"
+    scale_targetsize = DISPLAY_SIZE
+    hybrid_factor = 2
+
+    mode = "hybrid"
     def process(self, frame):
-        size = self.get_cfg("scale_targetsize")
-        if self.MODE == "hybrid":
+        size = self.scale_targetsize
+        if self.mode == "hybrid":
             # Scale down to multiple of target res, then use area interpolation
-            factor = self.get_cfg("hybrid_factor")
+            factor = self.hybrid_factor
             frame = cv.resize(frame, (size*factor, size*factor), interpolation=cv2.INTER_NEAREST)
             return cv.resize(frame, (size, size), interpolation=cv2.INTER_AREA)
-        elif self.MODE == "nearest":
+        elif self.mode == "nearest":
             return cv.resize(frame, (size, size), interpolation=cv.INTER_NEAREST)
-        elif self.MODE == "area":
+        elif self.mode == "area":
             return cv.resize(frame, (size, size), interpolation=cv.INTER_AREA)
         else:
             raise NotImplementedError
 
-    def get_config_params(self) -> Dict[str, Dict]:
-        return {
-            "scale_targetsize": {
-                "default": DISPLAY_SIZE,
-            },
-            "hybrid_factor": {
-                "default": 2,
-            }
-        }
 
-    def on_param_changed(self, param_name: str, new_value) -> None:
-        pass
-
-
+@dataclass
 class MotionExtract(FrameProcessor):
     """
     ``weights`` is a list of floats between 0.0 and 1.0 that determine how strongly each old frame should be weighted.
@@ -86,9 +72,9 @@ class MotionExtract(FrameProcessor):
 
     The sum of all weights should be 1.0.
     """
-    def __init__(self, weights):
-        self.weights = weights
+    weights: List[float]
 
+    def __post_init__(self):
         self.frame_queue = []
 
     def process(self, frame):
@@ -113,12 +99,4 @@ class MotionExtract(FrameProcessor):
         self.frame_queue.append(cv2.bitwise_not(frame))
 
         return out
-
-    def get_config_params(self) -> Dict[str, Dict]:
-        return {}
-
-    def on_param_changed(self, param_name: str, new_value) -> None:
-        pass
-
-
 

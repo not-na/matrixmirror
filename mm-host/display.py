@@ -42,7 +42,7 @@ import spidev
 
 import util
 
-DISPLAY_SIZE = 64
+DISPLAY_SIZE = 128
 
 MAGIC_PREAMBLE = b"\x00\xC0\xFE\xAA"
 
@@ -54,26 +54,22 @@ SPI_SPEED_KHZ = 16000
 
 class AbstractDisplay(util.FrameSink):
     def __init__(self, fps_limit: float = 60, show_fps: bool = True):
+        self.frame_size = (DISPLAY_SIZE, DISPLAY_SIZE)
+
         self.last_frame = time.perf_counter()
         self.fps_limit = fps_limit
         self.show_fps = show_fps
         self.n_frame = 0
 
     def push_frame(self, frame):
-        assert frame.shape == (DISPLAY_SIZE, DISPLAY_SIZE, 3), f"Frame shape is {frame.shape}"
+        assert frame.shape == (*self.frame_size, 3), f"Frame shape is {frame.shape}, expected {(*self.frame_size, 3)}"
         assert frame.dtype == np.uint8
 
         frame = frame.transpose((1, 0, 2))
 
         buf = frame.tobytes("C")
-        assert len(buf) == DISPLAY_SIZE*DISPLAY_SIZE*3
+        assert len(buf) == self.frame_size[0]*self.frame_size[1]*3, f"Unexpected buffer size: {len(buf)}"
         self.draw_frame(buf)
-
-    def get_config_params(self) -> Dict[str, Dict]:
-        return {}
-
-    def on_param_changed(self, param_name: str, new_value) -> None:
-        pass
 
     @abc.abstractmethod
     def send_buffer(self, buf: bytes):
@@ -111,6 +107,17 @@ class AbstractDisplay(util.FrameSink):
             out[i*3:i*3+3] = out_color
 
         self.draw_frame(bytes(out))
+
+
+class NullDisplay(AbstractDisplay):
+    def send_buffer(self, buf: bytes):
+        pass
+
+    def close(self):
+        pass
+
+    def __str__(self):
+        return "NullDisplay()"
 
 
 class TCPDisplay(AbstractDisplay):
@@ -197,12 +204,30 @@ class SerialDisplay(AbstractDisplay):
         self.serial.close()
 
 
+class SplitDisplay(util.FrameSink):
+    def __init__(self, left: util.FrameSink, right: util.FrameSink):
+        super().__init__()
+        self.left = left
+        self.left.frame_size = (DISPLAY_SIZE, DISPLAY_SIZE // 2)
+        self.right = right
+        self.right.frame_size = (DISPLAY_SIZE, DISPLAY_SIZE // 2)
+
+    def push_frame(self, frame):
+        frame = frame[::-1, ::-1, :]
+        self.left.push_frame(frame[:, DISPLAY_SIZE//2:, :])
+        self.right.push_frame(frame[:, :DISPLAY_SIZE//2, :])
+
+    def __str__(self):
+        return f"SplitDisplay(left={self.left}, right={self.right})"
+
+
 class SPIDisplay(AbstractDisplay):
-    def __init__(self, show_fps: bool = True):
+    def __init__(self, bus: int = 0, show_fps: bool = True):
         super().__init__(show_fps=show_fps)
 
         self.spi = spidev.SpiDev()
-        self.spi.open(0,0)
+        self.spi.open(bus,0)
+        self.bus = bus
 
         self.spi.max_speed_hz = SPI_SPEED_KHZ*1000
         self.spi.mode = 0b11
@@ -213,10 +238,15 @@ class SPIDisplay(AbstractDisplay):
     def close(self):
         self.spi.close()
 
+    def __str__(self):
+        return f"SPIDisplay(bus={self.bus})"
+
 
 class CVDisplay(util.FrameSink):
+    display_upscale = 4
+
     def push_frame(self, frame):
-        f = self.get_cfg("cv_display_upscale")
+        f = self.display_upscale
         frame = cv2.resize(frame, None, fx=f, fy=f, interpolation=cv2.INTER_NEAREST)
 
         cv2.imshow("MM Host preview", frame)
@@ -225,16 +255,6 @@ class CVDisplay(util.FrameSink):
             raise KeyboardInterrupt
 
     def close(self):
-        pass
-
-    def get_config_params(self) -> Dict[str, Dict]:
-        return {
-            "cv_display_upscale": {
-                "default": 8,
-            }
-        }
-
-    def on_param_changed(self, param_name: str, new_value) -> None:
         pass
 
 
@@ -268,6 +288,9 @@ class AsyncDisplay(AbstractDisplay):
         self.thread.join()
         self.display.close()
 
+    def __str__(self):
+        return f"AsyncDisplay(display={self.display})"
+
 
 if __name__ == "__main__":
     #display = SerialUnixSocketDisplay(Path("~/.tio-sock"))
@@ -290,6 +313,7 @@ if __name__ == "__main__":
         while True:
             #for c in colors:
             #    display.set_solid_color(c)
+            # Test solid color animations
             for i in range(0, 512, 1):
                 #time.sleep(1.0)
                 #time.sleep(0.5)

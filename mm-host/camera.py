@@ -55,12 +55,6 @@ class PiCameraSource(util.FrameSource):
 
         return frame
 
-    def get_config_params(self) -> Dict[str, Dict]:
-        return {}
-
-    def on_param_changed(self, param_name: str, new_value) -> None:
-        pass
-
 
 class CVCameraSource(util.FrameSource):
     def __init__(self, res=(640, 480)):
@@ -84,11 +78,3 @@ class CVCameraSource(util.FrameSource):
         assert frame.dtype == np.uint8
 
         return frame
-
-    def get_config_params(self) -> Dict[str, Dict]:
-        return {}
-
-    def on_param_changed(self, param_name: str, new_value) -> None:
-        pass
-
-

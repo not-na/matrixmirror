@@ -6,3 +6,5 @@ mm-pico/.idea/deployment.xml
 mm-pico/.idea/other.xml
 
 mm-host/.idea/deployment.xml
+
+*.pyc
