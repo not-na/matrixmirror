@@ -14,7 +14,7 @@ but can also run on any Linux system (though you would need to change the camera
 
 The host software generates arbitrary frames and sends these to the firmware over one of
 the following transport protocols:
-- SPI (best performance, up to ~75FPS with sufficient compute and very stable)
+- SPI (recommended, best performance, up to ~75FPS with sufficient compute and very stable)
 - TCP (requires Pi Pico W, flaky and only about 15FPS)
 - Serial (both direct and tunneled via [tio](https://github.com/tio/tio), stable but slow)
 
@@ -22,7 +22,7 @@ the following transport protocols:
 
 Below is a short list of features. See the respective sections for more detail.
 
-- Low-flicker (matrix refreshes at ~600Hz, well above flicker threshold for human vision and most cameras)
+- Low-flicker (matrix refreshes at 300-600Hz, well above flicker threshold for human vision and most cameras)
 - Low-latency
 - Highly configurable
   - Matrix size and scan factor

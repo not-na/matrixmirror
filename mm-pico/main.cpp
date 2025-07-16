@@ -5,9 +5,11 @@
 #include <pico/cyw43_arch.h>
 #include <server.h>
 
+#include "hardware/clocks.h"
+
 constexpr framebuf_src use_framebuf_src = FRAMEBUF_SRC_SPI;
 
-uint32_t framebuf[DISPLAY_SIZE*DISPLAY_SIZE];
+uint32_t framebuf[DISPLAY_WIDTH*DISPLAY_HEIGHT];
 
 constexpr int pin_spi_clk = 2;
 constexpr int pin_spi_miso = 3;
@@ -26,6 +28,7 @@ int main() {
     uint dma_rx;
 
     stdio_init_all();
+    //sleep_ms(2000);
 
     puts("mm-pico booting up...\n");
 
@@ -96,6 +99,8 @@ int main() {
 
     watchdog_enable(1000, true);
 
+    //printf("Running with a system clock of %dkHz\n", frequency_count_khz(clk_sys));
+
     while (true) {
         watchdog_update();
         frame_time = get_absolute_time();
@@ -144,6 +149,7 @@ int main() {
             // Wait for DMA to be ready
             //puts("Waiting for frame...");
             dma_channel_wait_for_finish_blocking(dma_rx);
+            //printf("DMA finished!\n");
 
             // Check if preamble is correct
             if (memcmp(buf_dma, magic_preamble, sizeof(magic_preamble)) != 0) {
@@ -155,6 +161,9 @@ int main() {
                     // Something is wrong, we have too many desyncs recently
                     // Reboot to try and fix the issue
                     printf("Too many desyncs, rebooting\n");
+                    gpio_init(DISPLAY_OENPIN);
+                    gpio_set_dir(DISPLAY_OENPIN, GPIO_OUT);
+                    gpio_put(DISPLAY_OENPIN, true);
                     watchdog_reboot(0, 0, 0);
                 }
 
@@ -221,7 +230,7 @@ int main() {
         assert(fifo_out == DISPLAY_REDRAW_DONE_MAGIC_NUMBER);
 
         //printf("Got frame, blitting\n");
-        hub75_blit_from_buffer(framebuf, 64, 64);
+        hub75_blit_from_buffer(framebuf, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 
         // Done here, trigger redraw from second core
         multicore_fifo_push_blocking(DISPLAY_TRIGGER_REDRAW_MAGIC_NUMBER);

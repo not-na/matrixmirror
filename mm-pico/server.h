@@ -4,7 +4,7 @@
 
 #include <hub75.h>
 
-constexpr int bufsize = DISPLAY_SIZE*DISPLAY_SIZE*3;
+constexpr int bufsize = DISPLAY_WIDTH*DISPLAY_HEIGHT*3;
 
 void server_init();
 

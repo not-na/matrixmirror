@@ -114,6 +114,11 @@ void hub75_init() {
             DISPLAY_OENPIN, "HUB75 OEn Pin"
             ));
 
+    // Immediately disable display to reduce flashes during reset
+    gpio_init(DISPLAY_OENPIN);
+    gpio_set_dir(DISPLAY_OENPIN, GPIO_OUT);
+    gpio_put(DISPLAY_OENPIN, true);
+
     // Initialize PIO
     display_sm_data = pio_claim_unused_sm(display_pio, true);
     display_sm_row = pio_claim_unused_sm(display_pio, true);
@@ -149,7 +154,7 @@ void hub75_init() {
             &c,
             &pio0_hw->txf[display_sm_data],
             NULL,  // Will be set later for each transfer
-            DISPLAY_SIZE*2,  // Because we shift out two rows at once
+            DISPLAY_WIDTH*2,  // Because we shift out two rows at once
             false
             );
 }
@@ -160,9 +165,12 @@ void hub75_init() {
     DISPLAY_REDRAWSTATE redrawstate = DISPLAY_REDRAWSTATE_IDLE;
 
     // Fill both framebuffers with a default pattern
-    for (int x = 0; x < DISPLAY_SIZE; ++x) {
-        for (int y = 0; y < DISPLAY_SIZE; ++y) {
-            uint32_t c = (x*4) << 16 | (y*4) << 8 | 16 << 0;
+    for (int x = 0; x < DISPLAY_WIDTH; ++x) {
+        for (int y = 0; y < DISPLAY_HEIGHT; ++y) {
+            uint32_t c = 2 << 16 | 0 << 8 | 0 << 0; //(x*4) << 16 | (y*4) << 8 | 16 << 0;
+            if (y == 0) {
+                c = x*(256/DISPLAY_WIDTH);
+            }
             hub75_draw_pixel(display_front_buf, x, y, c);
             hub75_draw_pixel(display_back_buf, x, y, c);
         }
@@ -192,7 +200,7 @@ void hub75_init() {
 
                 // Start DMA to push out pixels
                 dma_channel_set_read_addr(display_dma_chan,
-                                          &display_front_buf[row*DISPLAY_SIZE*2],
+                                          &display_front_buf[row*DISPLAY_WIDTH*2],
                                           true);
 
                 // Check SIO FIFO if new buffer is available
@@ -264,18 +272,18 @@ void hub75_init() {
 }
 
 void __not_in_flash_func(hub75_blit_from_buffer)(const uint32_t* buf, uint32_t w, uint32_t h) {
-    assert(w == DISPLAY_SIZE);
-    assert(h == DISPLAY_SIZE);
+    assert(w == DISPLAY_WIDTH);
+    assert(h == DISPLAY_HEIGHT);
 
-    for (int y = 0; y < DISPLAY_SIZE; ++y) {
+    for (int y = 0; y < DISPLAY_HEIGHT; ++y) {
         // Precalculate row address start
-        int startaddr = y*DISPLAY_SIZE*2;
+        int startaddr = y*DISPLAY_WIDTH*2;
         if (y >= DISPLAY_SCAN) {
-            startaddr = (y-DISPLAY_SCAN) * DISPLAY_SIZE*2 + 1;
+            startaddr = (y-DISPLAY_SCAN) * DISPLAY_WIDTH*2 + 1;
         }
 
-        for (int x = 0; x < DISPLAY_SIZE; ++x) {
-            display_back_buf[startaddr+2*x] = buf[y*DISPLAY_SIZE+x];
+        for (int x = 0; x < DISPLAY_WIDTH; ++x) {
+            display_back_buf[startaddr+2*x] = buf[y*DISPLAY_WIDTH+x];
         }
     }
 }
@@ -298,9 +306,9 @@ void hub75_pio_sm_clearstall() {
 static inline void __not_in_flash_func(hub75_draw_pixel)(uint32_t* buf, uint32_t x, uint32_t y, uint32_t color) {
     if (y<DISPLAY_SCAN) {
         // Normal, store pixel
-        buf[y*DISPLAY_SIZE*2+2*x] = color;
+        buf[y*DISPLAY_WIDTH*2+2*x] = color;
     } else {
         // Above display scan, store as interleaved
-        buf[(y-DISPLAY_SCAN)*DISPLAY_SIZE*2+2*x+1] = color;
+        buf[(y-DISPLAY_SCAN)*DISPLAY_WIDTH*2+2*x+1] = color;
     }
 }

@@ -10,12 +10,15 @@
 
 #include "hub75.pio.h"
 
-// Size of the display, currently only square displays are supported
-#define DISPLAY_SIZE 64
+// Size of the display, width is x axis and height is y axis
+#define DISPLAY_WIDTH 128  // Width is the length of the shift register chain (usually the longer axis)
+#define DISPLAY_HEIGHT 64  // Height is twice the display scan factor
+static_assert(DISPLAY_WIDTH >= DISPLAY_HEIGHT);
 
 // Scan factor of the display
 // Code will currently not work correctly if this is not exactly half of DISPLAY_SIZE
 #define DISPLAY_SCAN 32
+static_assert(DISPLAY_SCAN*2 == DISPLAY_HEIGHT);
 
 // Integer between 1 and 8
 // Lower numbers cause LSBs to be skipped
@@ -37,7 +40,7 @@ static_assert(pow(2, DISPLAY_ROWSEL_COUNT) == DISPLAY_SCAN);
 #define DISPLAY_OENPIN DISPLAY_STROBEPIN+1
 
 // Amount of pixels per framebuffer
-#define DISPLAY_FRAMEBUFFER_SIZE (DISPLAY_SIZE*DISPLAY_SIZE)
+#define DISPLAY_FRAMEBUFFER_SIZE (DISPLAY_WIDTH*DISPLAY_HEIGHT)
 
 // Amount of time to blank the display after each full frame draw
 // 0 for full brightness, increase to dim
