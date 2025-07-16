@@ -13,6 +13,14 @@ project(mm_pico)
 # initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+add_custom_target(flash_remote
+        ${CMAKE_CURRENT_SOURCE_DIR}/update_remote.sh hermippe.local ${CMAKE_CURRENT_BINARY_DIR}/mm_pico.uf2
+        DEPENDS mm_pico
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT Upload firmware via remote host
+        USES_TERMINAL
+)
+
 add_executable(mm_pico
         main.cpp
         hub75.cpp
