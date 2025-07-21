@@ -20,6 +20,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with mm-host.  If not, see <http://www.gnu.org/licenses/>.
 #
+import os
 import pprint
 
 import argparse
@@ -134,7 +135,14 @@ modes: Dict[str, Callable[[], List[FrameProcessor]]] = {
         SquareCrop(),
         ScaleDown(),
         MotionExtract([0.5, 0.5]),
-    ]
+    ],
+    "motion_add": lambda: [
+        SquareCrop(),
+        base := ScaleDown(),
+        MotionExtract([0.5, 0.5]),
+        #DifferenceAmplify(bias=0.5, gain=4)
+        DifferenceAdd(base=base, bias=0.5, gain=2)
+    ],
 }
 
 mode_names = list(modes.keys())
@@ -155,8 +163,8 @@ components: List[PipelineComponent] = [
     # Mode-specific components will be inserted here
 
     SplitDisplay(
-        left=NullDisplay(), #AsyncDisplay(SPIDisplay(bus=1, show_fps=not args.service)),
-        right=AsyncDisplay(SPIDisplay(bus=0, show_fps=not args.service)),
+        left=AsyncMultiprocessingDisplay(SPIDisplay(bus=1, show_fps=not args.service)),
+        right=AsyncMultiprocessingDisplay(SPIDisplay(bus=0, show_fps=not args.service)),
     ),
     #CVDisplay(),
 ]
@@ -165,6 +173,7 @@ pipeline = Pipeline(components, enable_perfmonitor=args.perfmon)
 update_mode()
 
 print("Done initializing, starting pipeline")
+print(f"Main process: {os.getppid()}")
 
 try:
     i = 0

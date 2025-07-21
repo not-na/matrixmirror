@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import List, Type, Dict
 import threading
 
+import numpy as np
+
 
 class PipelineComponent(abc.ABC):
     def close(self):
@@ -25,6 +27,8 @@ class FrameSource(PipelineComponent):
 
 
 class FrameProcessor(PipelineComponent):
+    last_output: np.ndarray
+
     @abc.abstractmethod
     def process(self, frame):
         pass
@@ -59,6 +63,7 @@ class Pipeline:
             for c in self.pipeline[1:-1]:
                 st = time.perf_counter()
                 f = c.process(f)
+                c.last_output = f
                 et = time.perf_counter()
 
                 if self.perfmonitor and self.n_frame % 60 == 0:

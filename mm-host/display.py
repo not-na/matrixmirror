@@ -22,6 +22,7 @@
 #
 import abc
 import collections
+import os
 import queue
 
 import socket
@@ -31,6 +32,7 @@ from pathlib import Path
 from typing import Optional, Dict
 import traceback
 import threading
+import multiprocessing
 
 import cv2
 import numpy as np
@@ -214,8 +216,8 @@ class SplitDisplay(util.FrameSink):
 
     def push_frame(self, frame):
         frame = frame[::-1, ::-1, :]
-        self.left.push_frame(frame[:, DISPLAY_SIZE//2:, :])
-        self.right.push_frame(frame[:, :DISPLAY_SIZE//2, :])
+        self.left.push_frame(frame[:, :DISPLAY_SIZE//2, :])
+        self.right.push_frame(frame[:, DISPLAY_SIZE//2:, :])
 
     def __str__(self):
         return f"SplitDisplay(left={self.left}, right={self.right})"
@@ -230,7 +232,7 @@ class SPIDisplay(AbstractDisplay):
         self.bus = bus
 
         self.spi.max_speed_hz = SPI_SPEED_KHZ*1000
-        self.spi.mode = 0b11
+        #self.spi.mode = 0b11
 
     def send_buffer(self, buf: bytes):
         self.spi.writebytes2(bytearray(buf))
@@ -259,16 +261,17 @@ class CVDisplay(util.FrameSink):
 
 
 class AsyncDisplay(AbstractDisplay):
-    def __init__(self, display: AbstractDisplay):
+    def __init__(self, display: AbstractDisplay, skip_thread: bool = False):
         super().__init__()
 
         self.display = display
 
         self.queue = queue.Queue(maxsize=1)
 
-        self.thread = threading.Thread(target=self._run)
-        self.thread.daemon = True
-        self.thread.start()
+        if not skip_thread:
+            self.thread = threading.Thread(target=self._run)
+            self.thread.daemon = True
+            self.thread.start()
 
     def _run(self):
         while True:
@@ -289,7 +292,30 @@ class AsyncDisplay(AbstractDisplay):
         self.display.close()
 
     def __str__(self):
-        return f"AsyncDisplay(display={self.display})"
+        return f"{self.__class__.__name__}(display={self.display})"
+
+
+def _run_mp(queue, display):
+    print(f"Async display process: {os.getppid()}")
+    while True:
+        buf = queue.get()
+        if buf is None:
+            break
+        display.draw_frame(buf)
+
+
+class AsyncMultiprocessingDisplay(AsyncDisplay):
+    def __init__(self, display: AbstractDisplay):
+        super().__init__(display, skip_thread=True)
+
+        self.queue = multiprocessing.Queue(maxsize=1)
+        self.proc = multiprocessing.Process(target=_run_mp, args=(self.queue, self.display))
+        self.proc.start()
+
+    def close(self):
+        self.queue.put(None)
+        self.proc.join()
+        self.display.close()
 
 
 if __name__ == "__main__":

@@ -25,6 +25,8 @@ import cv2 as cv
 
 from queue import Queue
 
+import numpy as np
+
 from display import DISPLAY_SIZE
 from util import *
 
@@ -41,6 +43,9 @@ class SquareCrop(FrameProcessor):
 
         # Crop to center
         return frame[0:h, (w-h)//2:(w-h)//2+h]
+
+    def __str__(self):
+        return "SquareCrop()"
 
 
 @dataclass
@@ -62,6 +67,9 @@ class ScaleDown(FrameProcessor):
             return cv.resize(frame, (size, size), interpolation=cv.INTER_AREA)
         else:
             raise NotImplementedError
+
+    def __str__(self):
+        return f"{self.__class__.__name__}(mode={self.mode}, hybrid_factor={self.hybrid_factor})"
 
 
 @dataclass
@@ -100,3 +108,29 @@ class MotionExtract(FrameProcessor):
 
         return out
 
+
+@dataclass
+class DifferenceAmplify(FrameProcessor):
+    bias: float = 0.5
+    gain: float = 2
+
+    def process(self, frame: np.ndarray):
+        frame = frame.astype(np.float32) / 256
+        frame -= self.bias
+        frame *= self.gain
+        frame += self.bias
+        return (frame*256).astype(np.uint8)
+
+@dataclass
+class DifferenceAdd(FrameProcessor):
+    base: FrameProcessor
+
+    bias: float = 0.5
+    gain: float = 2
+
+    def process(self, frame: np.ndarray):
+        frame = frame.astype(np.float32) / 256
+        frame -= self.bias  # Remove bias => bias-free difference in range -1 to 1
+        frame *= self.gain  # Apply gain
+        frame += self.base.last_output.astype(np.float32) / 256
+        return (frame*256).astype(np.uint8)
